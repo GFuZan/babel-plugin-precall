@@ -4,8 +4,8 @@ const Module = require("module");
  * 预执行插件
  * @param {import('@babel/core')} babel
  * @param {{ value: string | Array<string> }} options
- * @returns {{ visitor: import('@babel/core').Visitor }} 插件对象
- *@example
+ * @returns {import('@babel/core').PluginObj} 插件对象
+ * @example
  * ```js
  *   // 插件配置
  *   plugins: [
@@ -22,72 +22,52 @@ const Module = require("module");
  *   precall`module.exports=1555` => 1555  // 方式2
  * ```
  */
-const plugin = function (babel, options = {}) {
-  let ops;
+const plugin = function (babel, options) {
+  const { types: t } = babel;
+  const emptyObj = {}
+  let opts = options && handleOptions(options);
 
   return {
     visitor: {
-      Program(rootPath, state) {
-        !ops && (ops = handleOptions(state.opts || options));
+      Program: {
+        enter(path, state) {
+          !opts && (opts = handleOptions(state.opts || {}));
+          Object.assign(state, opts);
+        },
+      },
+      CallExpression(path, state) {
+        const { filename = "p.js", keyMap } = state;
 
-        rootPath.traverse(traverseOptions, {
-          filename: state.filename,
-          ...ops,
-          babel,
-        });
+        if (
+          t.isIdentifier(path.node.callee) &&
+          keyMap[path.node.callee.name] &&
+          !path.scope.hasBinding(path.node.callee.name)
+        ) {
+          const n = path.node.arguments[0];
+          let moduleValue = "";
+          if (t.isTemplateLiteral(n)) {
+            moduleValue = n.quasis[0].value.raw;
+          } else if (t.isStringLiteral(n)) {
+            moduleValue = n.value;
+          }
+
+          replaceNode(path, babel, moduleValue, filename);
+        }
+      },
+      TaggedTemplateExpression(path, state) {
+        const { filename = "p.js", keyMap } = state;
+        const { tag, quasi } = path.node;
+        if (
+          t.isIdentifier(tag) &&
+          !emptyObj[tag.name] &&
+          keyMap[tag.name] &&
+          t.isTemplateLiteral(quasi)
+        ) {
+          replaceNode(path, babel, quasi.quasis[0].value.raw, filename);
+        }
       },
     },
   };
-};
-
-/**
- * @type {import('@babel/core').Visitor}
- */
-const traverseOptions = {
-  Identifier(path, state) {
-    /**
-     * @type {{ babel: import('@babel/core') }}
-     */
-    const {
-      filename = "p.js",
-      keyMap,
-      babel,
-      babel: { types: t },
-    } = state;
-
-    const { name } = path.node;
-    if (
-      keyMap[name] &&
-      path.key === "callee" &&
-      t.isCallExpression(path.parent) &&
-      !path.scope.hasBinding(name)
-    ) {
-      const n = path.parent.arguments[0];
-      let moduleValue = "";
-      if (t.isTemplateLiteral(n)) {
-        moduleValue = n.quasis[0].value.raw;
-      } else if (t.isStringLiteral(n)) {
-        moduleValue = n.value;
-      }
-
-      replaceNode(path.parentPath, babel, moduleValue, filename);
-    }
-  },
-  TaggedTemplateExpression(path, state) {
-    /**
-     * @type {{ babel: import('@babel/core') }}
-     */
-    const {
-      filename = "p.js",
-      keyMap,
-      babel,
-      babel: { types: t },
-    } = state;
-    const { tag, quasi } = path.node;
-    if (t.isIdentifier(tag) && keyMap[tag.name] && t.isTemplateLiteral(quasi)) {
-      replaceNode(path, babel, quasi.quasis[0].value.raw, filename);
-    }
-  },
 };
 
 /**
@@ -98,7 +78,7 @@ const traverseOptions = {
  * @param {*} filename
  */
 const replaceNode = (path, babel, moduleValue, filename) => {
-  const { template, types: t, transform, transformSync = transform } = babel;
+  const { types: t, transform, transformSync = transform } = babel;
   if (moduleValue) {
     const { code } = transformSync(moduleValue, {
       filename,
