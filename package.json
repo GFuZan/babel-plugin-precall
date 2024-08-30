@@ -1,6 +1,6 @@
 {
   "name": "babel-plugin-precall",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "babel 预执行插件",
   "main": "index.js",
   "repository": {
