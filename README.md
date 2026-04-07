@@ -18,7 +18,7 @@ module.exports = {
     [
       "babel-plugin-precall",
       {
-        value: "precall",
+        value: "precall", // 可使用数组配置多个关键字,例如: ['preval', 'precall']
       },
     ],
   ],
